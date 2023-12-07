@@ -43,3 +43,15 @@ roslaunch myrobot_simulator gazebo_testwalls.launch
 ```shell
 roslaunch myrobot_description rviz.launch
 ```
+
+## Запуск управления при помощи клавиатуры
+
+```shell
+roslaunch myrobot_teleop teleop_keyboard.launch
+```
+
+## Запуск управления при помощи ИК-датчиков
+
+```shell
+roslaunch myrobot_teleop teleop_auto.launch
+```

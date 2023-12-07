@@ -3,18 +3,23 @@
   
 
   <gazebo reference="left_wheel">
-    <mu1>4</mu1>
-    <mu2>4</mu2>
+    <mu1>5</mu1>
+    <mu2>5</mu2>
   </gazebo>
 
   <gazebo reference="right_wheel">
-    <mu1>4</mu1>
-    <mu2>4</mu2>
+    <mu1>5</mu1>
+    <mu2>5</mu2>
   </gazebo>
 
   <gazebo reference="front_roller">
-    <mu1>0</mu1>
-    <mu2>0</mu2>
+    <mu1>0.1</mu1>
+    <mu2>0.1</mu2>
+  </gazebo>
+
+  <gazebo reference="back_roller">
+    <mu1>0.1</mu1>
+    <mu2>0.1</mu2>
   </gazebo>
 
   <gazebo reference="base_link">
