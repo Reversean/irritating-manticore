@@ -55,3 +55,9 @@ roslaunch myrobot_teleop teleop_keyboard.launch
 ```shell
 roslaunch myrobot_teleop teleop_auto.launch
 ```
+
+## Запуск управления при помощи лидара
+
+```shell
+roslaunch myrobot_teleop teleop_lidar.launch
+```
