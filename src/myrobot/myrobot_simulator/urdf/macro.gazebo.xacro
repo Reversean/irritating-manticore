@@ -61,7 +61,7 @@
     </gazebo>
   </xacro:macro>
   
-  <xacro:rplidar_a2_gpu max_angle="360" min_angle="0" name="rplidar_a2" ray_count="400" ros_topic="/myrobot/rplidar/scan" update_rate="20"/>
+  <xacro:rplidar_a2_gpu max_angle="360" min_angle="0" name="rplidar_a2" ray_count="360" ros_topic="/myrobot/rplidar/scan" update_rate="20"/>
 
   <xacro:macro name="ir_sensor_gazebo" params="name *topic_name *frame_name">
     <gazebo reference="ir_sensor_${name}">

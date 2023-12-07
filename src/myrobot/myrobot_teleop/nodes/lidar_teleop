@@ -1,0 +1,210 @@
+#!/usr/bin/env python
+import random
+import rospy
+import numpy as np
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
+
+MINICAR_MAX_LIN_VEL = 1
+MINICAR_MAX_ANG_VEL = 2
+VEL_STEP = 0.05
+
+TURN_MIN_RANGE = 5
+TURN_COUNTER_LIMIT = 10
+IGNORE_TURNS_COUNTER_LIMIT = 80
+
+FRONT_MIN_RANGE = 0.55
+LOW_RANGE_COUNTER_LIMIT = 50
+
+RANGE_FRONT_START = 315
+RANGE_LEFT_START = 45
+RANGE_BACK_START = 135
+RANGE_RIGHT_START = 225
+
+RANGE_FRONT_END = 45
+RANGE_LEFT_END = 135
+RANGE_BACK_END = 225
+RANGE_RIGHT_END = 315
+
+LIDAR_TOPIC = '/myrobot/rplidar/scan'
+
+class AutoTeleop:
+    def __init__(self):
+        rospy.init_node('lidar_teleop')
+
+        cmd_vel_topic = rospy.get_param('/lidar_teleop/cmd_vel', '/cmd_vel')
+        rospy.loginfo('Cmd Vel topic: ' + cmd_vel_topic)
+
+        self.pub = rospy.Publisher(cmd_vel_topic, Twist, queue_size=10)
+        
+        self.forward_state = False
+        self.back_state = False
+        self.left_state = False
+        self.right_state = False
+
+        self.key_state_lin = 0
+        self.key_state_ang = 0
+        self.target_linear_vel = 0.0
+        self.target_angular_vel = 0.0
+
+        self.left_side_range = 0
+        self.right_side_range = 0
+        self.front_left_range = 0
+        self.front_center_range = 0
+        self.front_right_range = 0
+
+        self.low_range_counter = 0
+        self.ignore_turns_counter = IGNORE_TURNS_COUNTER_LIMIT
+        self.turn_counter = TURN_COUNTER_LIMIT
+
+        self.corrective_turn_left_state = False
+        self.corrective_turn_right_state = False
+
+        self.should_stop_state = False
+        self.turn_left_state = False
+        self.turn_right_state = False
+        self.turn_back_state = False
+
+        self.last_direction = ""
+
+        self.subscriber_lidar = None
+
+    def run(self):
+        self.subscriber_lidar = rospy.Subscriber(LIDAR_TOPIC, LaserScan, callback=self.lidar_callback)
+        rate = rospy.Rate(10)
+        try:
+            while not rospy.is_shutdown():
+                self.update_state()
+                rate.sleep()
+        except rospy.ROSInterruptException:
+            pass
+        self.subscriber_lidar.unregister()
+
+    def update_state(self):
+        self.update_control_state()
+        self.update_speed()
+        self.log_state()
+        twist = Twist()
+        twist.linear.x = self.target_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.target_angular_vel
+        self.pub.publish(twist)
+
+    def update_control_state(self):
+        self.update_corrective_turn_state()
+
+        if self.should_stop_state:
+            self.forward_state = False
+            if self.turn_back_state:
+                self.forward_state = False
+                self.back_state = True
+                self.left_state = bool(random.getrandbits(1))
+                self.right_state = not self.left_state
+            else:
+                self.back_state = False
+                self.left_state = self.corrective_turn_left_state
+                self.right_state = self.corrective_turn_right_state
+        else:
+            self.update_turn_state()
+            if self.turn_left_state or self.turn_right_state:
+                self.forward_state = False
+                self.left_state = self.turn_left_state
+                self.right_state = self.turn_right_state
+            else:
+                self.forward_state = True
+                self.left_state = self.corrective_turn_left_state
+                self.right_state = self.corrective_turn_right_state
+
+    def update_corrective_turn_state(self):
+        self.should_stop_state = self.front_center_range < FRONT_MIN_RANGE
+        self.turn_back_state = self.low_range_counter >= LOW_RANGE_COUNTER_LIMIT
+
+        left_range_is_low = self.front_left_range < FRONT_MIN_RANGE
+        right_range_is_low = self.front_right_range < FRONT_MIN_RANGE
+
+        if left_range_is_low or self.should_stop_state or right_range_is_low:
+            self.low_range_counter += 1
+        else:
+            self.low_range_counter = 0
+
+        if left_range_is_low or right_range_is_low:
+            self.corrective_turn_left_state = self.front_left_range > self.front_right_range
+            self.corrective_turn_right_state = not self.corrective_turn_left_state
+        else:
+            self.corrective_turn_left_state = False
+            self.corrective_turn_right_state = False
+
+    def update_turn_state(self):
+        if self.ignore_turns_counter >= IGNORE_TURNS_COUNTER_LIMIT:
+            is_left_turn_available = self.left_side_range > TURN_MIN_RANGE
+            is_right_turn_available = self.right_side_range > TURN_MIN_RANGE
+            
+            if is_left_turn_available or is_right_turn_available:
+                self.ignore_turns_counter = 0
+                if bool(random.getrandbits(1)):
+                    self.turn_counter = 0
+                    if is_left_turn_available and is_right_turn_available:
+                        self.turn_left_state = bool(random.getrandbits(1))
+                        self.turn_right_state = not self.turn_left_state
+                    else:
+                        self.turn_left_state = is_left_turn_available
+                        self.turn_right_state = is_right_turn_available
+                    if self.turn_left_state:
+                        self.last_direction = "left"
+                    else:
+                        self.last_direction = "right"
+                else:
+                    self.last_direction = "forward"
+        else:
+            self.ignore_turns_counter += 1
+        
+        if self.turn_counter >= TURN_COUNTER_LIMIT:
+            self.turn_left_state = False
+            self.turn_right_state = False
+        else:
+            self.turn_counter += 1   
+
+    def update_speed(self):
+        if self.forward_state and self.back_state:
+            self.key_state_lin = 0
+        elif self.forward_state:
+            self.key_state_lin = min(max(0, self.key_state_lin + VEL_STEP), 1)
+        elif self.back_state:
+            self.key_state_lin = max(min(0, self.key_state_lin - VEL_STEP), -1)
+        else:
+            self.key_state_lin = 0
+
+        if self.left_state and self.right_state:
+            self.key_state_ang = 0
+        elif self.left_state:
+            self.key_state_ang = 1
+        elif self.right_state:
+            self.key_state_ang = -1
+        else:
+            self.key_state_ang = 0
+
+        self.target_linear_vel = MINICAR_MAX_LIN_VEL * self.key_state_lin
+        self.target_angular_vel = MINICAR_MAX_ANG_VEL * self.key_state_ang
+
+    def lidar_callback(self, msg):
+        ranges = np.array(msg.ranges)
+        self.left_side_range = np.min(ranges[95:105])
+        self.right_side_range = np.min(ranges[265:275])
+        self.front_left_range = np.min(ranges[15:45])
+        self.front_center_range = min(np.min(ranges[345:]), np.min(ranges[:15]))
+        self.front_right_range = np.min(ranges[315:345])
+
+    def log_state(self):
+        print(f'left side range: {self.left_side_range:6.3f}, right side range: {self.right_side_range:6.3f}')
+        print(f'front left range: {self.front_left_range:6.3f}, front center range: {self.front_center_range:6.3f}, front right range: {self.front_right_range:6.3f}')
+        print(f'ignore turns counter: {self.ignore_turns_counter:d}, turn counter: {self.turn_counter:d}')
+        print(f'turn left: {self.turn_left_state}, turn right: {self.turn_right_state}')
+        print(f'last direction: {self.last_direction:s}')
+        print(f'low range counter: {self.low_range_counter:d}')
+        print(f'should stop: {self.should_stop_state}, turn back: {self.turn_back_state}')
+        print(f'correction turn left: {self.corrective_turn_left_state}, correction turn right: {self.corrective_turn_right_state}')
+        print(f'forward: {self.forward_state}, back: {self.back_state}, left: {self.left_state}, right: {self.right_state}')
+        print('=======================================================')
+
+if __name__=="__main__":
+    teleop = AutoTeleop()
+    teleop.run()
